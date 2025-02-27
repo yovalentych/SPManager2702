@@ -41,6 +41,43 @@ const getPendingRequests = async (req, res) => {
   res.json(pendingRequests);
 };
 
+// прийняти запит
+const acceptContactRequest = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'Користувач не знайдений' });
+    }
+
+    // Знаходимо запит у контакти
+    const contactIndex = user.contacts.findIndex(
+      (contact) =>
+        contact.user.toString() === userId && contact.status === 'pending'
+    );
+
+    if (contactIndex === -1) {
+      return res
+        .status(400)
+        .json({ message: 'Запит не знайдено або вже оброблено' });
+    }
+
+    // Оновлюємо статус контакту на "accepted"
+    user.contacts[contactIndex].status = 'accepted';
+    await user.save();
+
+    // Також додаємо поточного користувача у контакти того, хто відправив запит
+    const sender = await User.findById(userId);
+    sender.contacts.push({ user: req.user._id, status: 'accepted' });
+    await sender.save();
+
+    res.json({ message: 'Запит прийнято, користувач доданий у контакти' });
+  } catch (error) {
+    res.status(500).json({ message: 'Помилка сервера', error: error.message });
+  }
+};
+
 // можливість відхилити запит у контакти
 const rejectContactRequest = async (req, res) => {
   try {
@@ -68,6 +105,24 @@ const rejectContactRequest = async (req, res) => {
     await user.save();
 
     res.json({ message: 'Запит відхилено' });
+  } catch (error) {
+    res.status(500).json({ message: 'Помилка сервера', error: error.message });
+  }
+};
+
+// отримання даних контакту
+const getContacts = async (req, res) => {
+  try {
+    // Отримуємо користувача та "розгортаємо" контакти
+    const user = await User.findById(req.user._id).populate(
+      'contacts.user',
+      'name email affiliation position socialLinks'
+    );
+
+    // Вибираємо тільки підтверджені контакти (accepted)
+    const friends = user.contacts.filter((c) => c.status === 'accepted');
+
+    res.json(friends);
   } catch (error) {
     res.status(500).json({ message: 'Помилка сервера', error: error.message });
   }
@@ -107,4 +162,7 @@ module.exports = {
   sendContactRequest,
   getPendingRequests,
   rejectContactRequest,
+  removeContact,
+  acceptContactRequest,
+  getContacts,
 };
